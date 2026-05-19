@@ -25,6 +25,14 @@ The percentage and reset time match exactly what Claude.ai shows on the Plan usa
 
 ## Install
 
+If you haven't already, allow PowerShell to run scripts (one-time, per machine):
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+Then install with:
+
 ```powershell
 irm https://raw.githubusercontent.com/Emam96/usage-widget/main/install.ps1 | iex
 ```
