@@ -26,13 +26,13 @@ The percentage and reset time match exactly what Claude.ai shows on the Plan usa
 ## Install
 
 ```powershell
-irm https://raw.githubusercontent.com/YOURUSERNAME/usage-widget/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Emam96/usage-widget/main/install.ps1 | iex
 ```
 
 Or clone and run locally:
 
 ```powershell
-git clone https://github.com/YOURUSERNAME/usage-widget
+git clone https://github.com/Emam96/usage-widget
 cd usage-widget
 .\install.ps1
 ```

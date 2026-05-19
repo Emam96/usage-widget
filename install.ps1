@@ -9,7 +9,7 @@ $PythonMin  = [Version]"3.8"
 
 # If running from the cloned repo, use local files; otherwise download from GitHub
 $ScriptDir    = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$GitHubBase   = "https://raw.githubusercontent.com/YOURUSERNAME/usage-widget/main"
+$GitHubBase   = "https://raw.githubusercontent.com/Emam96/usage-widget/main"
 
 function Write-Step($msg) { Write-Host "`n>> $msg" -ForegroundColor Cyan }
 function Write-OK($msg)   { Write-Host "   OK  $msg" -ForegroundColor Green }
