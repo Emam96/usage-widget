@@ -3,123 +3,260 @@
 
 $ErrorActionPreference = "Stop"
 
-$WidgetDir  = "$env:USERPROFILE\ClaudeUsageWidget"
-$ClaudeDir  = "$env:USERPROFILE\.claude"
-$PythonMin  = [Version]"3.8"
+$WidgetDir = "$env:USERPROFILE\ClaudeUsageWidget"
+$ClaudeDir = "$env:USERPROFILE\.claude"
+$PythonMin = [Version]"3.8"
 
-# If running from the cloned repo, use local files; otherwise download from GitHub
-$ScriptDir    = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$GitHubBase   = "https://raw.githubusercontent.com/Emam96/usage-widget/main"
+# GitHub source
+$GitHubBase = "https://raw.githubusercontent.com/Emam96/usage-widget/master"
 
-function Write-Step($msg) { Write-Host "`n>> $msg" -ForegroundColor Cyan }
-function Write-OK($msg)   { Write-Host "   OK  $msg" -ForegroundColor Green }
-function Fail($msg)       { Write-Host "`n   ERROR: $msg" -ForegroundColor Red; exit 1 }
+# Only available when script runs from local disk
+$ScriptDir = $null
+
+if ($PSCommandPath) {
+    $ScriptDir = Split-Path -Parent $PSCommandPath
+}
+
+function Write-Step($msg) {
+    Write-Host "`n>> $msg" -ForegroundColor Cyan
+}
+
+function Write-OK($msg) {
+    Write-Host "   OK  $msg" -ForegroundColor Green
+}
+
+function Fail($msg) {
+    Write-Host "`n   ERROR: $msg" -ForegroundColor Red
+    exit 1
+}
 
 function Get-TextFile($filename) {
-    $local = Join-Path $ScriptDir $filename
-    if (Test-Path $local) {
-        return Get-Content $local -Raw -Encoding utf8
+
+    # Try local repo files first (only if running locally)
+    if ($ScriptDir) {
+
+        $local = Join-Path $ScriptDir $filename
+
+        if (Test-Path $local) {
+            return Get-Content $local -Raw -Encoding utf8
+        }
     }
+
+    # Otherwise download from GitHub
     try {
-        return (Invoke-WebRequest -Uri "$GitHubBase/$filename" -UseBasicParsing).Content
-    } catch {
+
+        $url = "$GitHubBase/$filename"
+
+        Write-Host "   Downloading $filename..."
+
+        return (Invoke-WebRequest -Uri $url -UseBasicParsing).Content
+    }
+    catch {
         Fail "Could not get $filename from GitHub: $_"
     }
 }
 
 # ── 1. Find Python ────────────────────────────────────────────────────────────
+
 Write-Step "Checking Python..."
 
 $python = $null
+
 foreach ($cmd in @("python", "python3", "py")) {
+
     try {
+
         $ver = & $cmd --version 2>&1
+
         if ($ver -match "Python (\d+\.\d+\.\d+)") {
+
             if ([Version]$Matches[1] -ge $PythonMin) {
+
                 $python = (Get-Command $cmd -ErrorAction Stop).Source
+
                 Write-OK "Found $ver at $python"
+
                 break
             }
         }
-    } catch {}
+    }
+    catch {}
 }
 
 if (-not $python) {
+
     Write-Host "`n   Python $PythonMin+ not found." -ForegroundColor Yellow
     Write-Host "   Download from: https://www.python.org/downloads/"
     Write-Host "   Check 'Add Python to PATH' during installation, then re-run this script."
+
     exit 1
 }
 
 $pythonw = Join-Path (Split-Path $python) "pythonw.exe"
-if (-not (Test-Path $pythonw)) { $pythonw = $python }
 
-# ── 2. Copy files ─────────────────────────────────────────────────────────────
-Write-Step "Installing widget files..."
+if (-not (Test-Path $pythonw)) {
+    $pythonw = $python
+}
+
+# ── 2. Create folders ─────────────────────────────────────────────────────────
+
+Write-Step "Preparing directories..."
 
 New-Item -ItemType Directory -Force -Path $WidgetDir | Out-Null
-New-Item -ItemType Directory -Force -Path $ClaudeDir  | Out-Null
+New-Item -ItemType Directory -Force -Path $ClaudeDir | Out-Null
+
+Write-OK "Directories ready"
+
+# ── 3. Download / copy files ─────────────────────────────────────────────────
+
+Write-Step "Installing widget files..."
 
 $widgetContent  = Get-TextFile "widget.py"
 $captureContent = Get-TextFile "rate_limit_capture.py"
 $reqsContent    = Get-TextFile "requirements.txt"
 
-[IO.File]::WriteAllText("$WidgetDir\widget.py",             $widgetContent,  [Text.Encoding]::UTF8)
-[IO.File]::WriteAllText("$ClaudeDir\rate_limit_capture.py", $captureContent, [Text.Encoding]::UTF8)
-[IO.File]::WriteAllText("$WidgetDir\requirements.txt",      $reqsContent,    [Text.Encoding]::UTF8)
+[IO.File]::WriteAllText(
+    "$WidgetDir\widget.py",
+    $widgetContent,
+    [Text.Encoding]::UTF8
+)
 
-Write-OK "widget.py          → $WidgetDir\widget.py"
-Write-OK "rate_limit_capture → $ClaudeDir\rate_limit_capture.py"
+[IO.File]::WriteAllText(
+    "$ClaudeDir\rate_limit_capture.py",
+    $captureContent,
+    [Text.Encoding]::UTF8
+)
 
-# ── 3. Install pip dependencies ───────────────────────────────────────────────
-Write-Step "Installing dependencies (pystray, Pillow)..."
+[IO.File]::WriteAllText(
+    "$WidgetDir\requirements.txt",
+    $reqsContent,
+    [Text.Encoding]::UTF8
+)
 
-& $python -m pip install -r "$WidgetDir\requirements.txt" --quiet
-if ($LASTEXITCODE -ne 0) { Fail "pip install failed — check your internet connection and try again." }
+Write-OK "widget.py installed"
+Write-OK "rate_limit_capture.py installed"
+Write-OK "requirements.txt installed"
+
+# ── 4. Install dependencies ──────────────────────────────────────────────────
+
+Write-Step "Installing dependencies..."
+
+& $python -m pip install -r "$WidgetDir\requirements.txt"
+
+if ($LASTEXITCODE -ne 0) {
+    Fail "pip install failed — check internet connection"
+}
+
 Write-OK "Dependencies installed"
 
-# ── 4. Patch ~/.claude/settings.json ─────────────────────────────────────────
-Write-Step "Configuring Claude Code status line..."
+# ── 5. Configure Claude Code status line ─────────────────────────────────────
+
+Write-Step "Configuring Claude Code..."
 
 $captureScript = "$ClaudeDir\rate_limit_capture.py"
-$cmdLine       = "`"$python`" `"$captureScript`""
-$cmdJson       = $cmdLine | ConvertTo-Json   # handles backslash and quote escaping
+
+$cmdLine = "`"$python`" `"$captureScript`""
 
 $settingsPath = "$ClaudeDir\settings.json"
 
-if (Test-Path $settingsPath) {
-    $raw = Get-Content $settingsPath -Raw -Encoding utf8
-    # Parse to check if statusLine already exists
-    try { $cfg = $raw | ConvertFrom-Json } catch { Fail "~/.claude/settings.json is not valid JSON. Fix it manually then re-run." }
-
-    if ($cfg.PSObject.Properties["statusLine"]) {
-        Write-OK "statusLine already present in settings.json — skipped"
-    } else {
-        # Insert before the closing brace
-        $patch  = $raw.TrimEnd().TrimEnd("}")
-        $patch += ",`n  `"statusLine`": { `"type`": `"command`", `"command`": $cmdJson }`n}"
-        [IO.File]::WriteAllText($settingsPath, $patch, [Text.Encoding]::UTF8)
-        Write-OK "statusLine added to settings.json"
-    }
-} else {
-    $newCfg = "{ `"statusLine`": { `"type`": `"command`", `"command`": $cmdJson } }"
-    [IO.File]::WriteAllText($settingsPath, $newCfg, [Text.Encoding]::UTF8)
-    Write-OK "Created settings.json with statusLine"
+$statusLineObject = @{
+    type    = "command"
+    command = $cmdLine
 }
 
-# ── 5. Kill old widget, launch new one ────────────────────────────────────────
-Write-Step "Starting widget..."
+if (Test-Path $settingsPath) {
+
+    try {
+
+        $cfg = Get-Content $settingsPath -Raw -Encoding utf8 | ConvertFrom-Json
+    }
+    catch {
+
+        Fail "~/.claude/settings.json is not valid JSON"
+    }
+
+    if (-not $cfg.statusLine) {
+
+        $cfg | Add-Member -NotePropertyName "statusLine" -NotePropertyValue $statusLineObject
+
+        $cfg | ConvertTo-Json -Depth 10 | Set-Content $settingsPath -Encoding UTF8
+
+        Write-OK "statusLine added"
+    }
+    else {
+
+        Write-OK "statusLine already exists"
+    }
+}
+else {
+
+    $cfg = @{
+        statusLine = $statusLineObject
+    }
+
+    $cfg | ConvertTo-Json -Depth 10 | Set-Content $settingsPath -Encoding UTF8
+
+    Write-OK "settings.json created"
+}
+
+# ── 6. Kill old widget ───────────────────────────────────────────────────────
+
+Write-Step "Stopping old widget instances..."
 
 try {
-    Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -match "widget\.py" } | ForEach-Object {
-        Stop-Process -Id $_.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue
-    }
-} catch {}
 
-Start-Sleep -Milliseconds 300
-Start-Process -FilePath $pythonw -ArgumentList "`"$WidgetDir\widget.py`"" -WindowStyle Hidden
+    Get-CimInstance Win32_Process |
+        Where-Object {
+            $_.CommandLine -match "widget\.py"
+        } |
+        ForEach-Object {
+
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+}
+catch {}
+
+Start-Sleep -Milliseconds 500
+
+Write-OK "Old widgets stopped"
+
+# ── 7. Start widget ──────────────────────────────────────────────────────────
+
+Write-Step "Launching widget..."
+
+Start-Process `
+    -FilePath $pythonw `
+    -ArgumentList "`"$WidgetDir\widget.py`"" `
+    -WindowStyle Hidden
+
 Write-OK "Widget launched"
 
-Write-Host "`n  Done! The Claude Usage Widget is running in your system tray." -ForegroundColor Green
-Write-Host "  It will auto-start at every login — no further setup needed." -ForegroundColor Gray
-Write-Host "  The usage % appears after your first Claude Code API call (Pro/Max plans)." -ForegroundColor Gray
+# ── 8. Auto-start at login ───────────────────────────────────────────────────
+
+Write-Step "Configuring auto-start..."
+
+$StartupDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
+
+$ShortcutPath = Join-Path $StartupDir "ClaudeUsageWidget.lnk"
+
+$WScriptShell = New-Object -ComObject WScript.Shell
+
+$Shortcut = $WScriptShell.CreateShortcut($ShortcutPath)
+
+$Shortcut.TargetPath = $pythonw
+$Shortcut.Arguments  = "`"$WidgetDir\widget.py`""
+$Shortcut.WorkingDirectory = $WidgetDir
+
+$Shortcut.Save()
+
+Write-OK "Auto-start configured"
+
+# ── Done ─────────────────────────────────────────────────────────────────────
+
+Write-Host "`nDone!" -ForegroundColor Green
+
+Write-Host "Claude Usage Widget is now installed and running." -ForegroundColor Gray
+
+Write-Host "It will auto-start automatically at Windows login." -ForegroundColor Gray
+
+Write-Host "Usage % appears after your first Claude Code API request." -ForegroundColor Gray
