@@ -34,7 +34,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 Then install with:
 
 ```powershell
-irm https://raw.githubusercontent.com/Emam96/usage-widget/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Emam96/usage-widget/master/install.ps1 | iex
 ```
 
 Or clone and run locally:
